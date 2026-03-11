@@ -13,3 +13,8 @@ taking into account possible cross-compilation for both Windows and Linux. It's 
 need use POSIX.
 
 Walter Artyomenko, october 2019.
+
+## Documentation
+
+- Detailed Russian documentation for the FlyMagicLNS movement/correction model: `docs/MagicLNS_Model_Documentation.ru.md`.
+
