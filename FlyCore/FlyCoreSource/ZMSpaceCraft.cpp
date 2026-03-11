@@ -1,6 +1,6 @@
 //-------------------------------------------------------------------------------
 // ZMSpaceCraft.cpp
-// А. Николенко 03.08.2018
+// ГЂ. ГЌГЁГЄГ®Г«ГҐГ­ГЄГ® 03.08.2018
 //-------------------------------------------------------------------------------
 #pragma once
 #include <stdafx.h>
@@ -32,6 +32,11 @@ ZMSC::ZMSC( ) : ZCIntegrator( )
 	m_AtmSMA440181 = 0 ;
 
 	HStoryClarify = 0 ;
+
+	m_RotJ[0] = m_RotJ[1] = m_RotJ[2] = 1.0;
+	m_RotJinv[0] = m_RotJinv[1] = m_RotJinv[2] = 1.0;
+	m_RotMoment[0] = m_RotMoment[1] = m_RotMoment[2] = 0.0;
+	m_RotQuatNormalize = true;
 
 	PreInitInfo.defautFixedStep = 0;
 }
@@ -119,11 +124,11 @@ int ZMSC::Init(ZKEYNU& NuKey, ZCExternalEquationsDefinition* EED)
 	int rc = FlyGlobalInit(); if (rc) return rc;
 
 	ZNU nu;
-	// Загружаем НУ (из файла или БД или ..... 
+	// Г‡Г ГЈГ°ГіГ¦Г ГҐГ¬ ГЌГ“ (ГЁГ§ ГґГ Г©Г«Г  ГЁГ«ГЁ ГЃГ„ ГЁГ«ГЁ ..... 
 	rc = LoadNU(NuKey, nu); if (rc) return rc;
-	// Инициализируем МД - задаем начальное значение вектора (из НУ)
-	// выделяем память, загружаем ЛЩС, параметры ГПЗ, параметры модели атмосферы и т.д.
-	// После этого МД готова к интегрированию СДУ
+	// Г€Г­ГЁГ¶ГЁГ Г«ГЁГ§ГЁГ°ГіГҐГ¬ ГЊГ„ - Г§Г Г¤Г ГҐГ¬ Г­Г Г·Г Г«ГјГ­Г®ГҐ Г§Г­Г Г·ГҐГ­ГЁГҐ ГўГҐГЄГІГ®Г°Г  (ГЁГ§ ГЌГ“)
+	// ГўГ»Г¤ГҐГ«ГїГҐГ¬ ГЇГ Г¬ГїГІГј, Г§Г ГЈГ°ГіГ¦Г ГҐГ¬ Г‹Г™Г‘, ГЇГ Г°Г Г¬ГҐГІГ°Г» ГѓГЏГ‡, ГЇГ Г°Г Г¬ГҐГІГ°Г» Г¬Г®Г¤ГҐГ«ГЁ Г ГІГ¬Г®Г±ГґГҐГ°Г» ГЁ ГІ.Г¤.
+	// ГЏГ®Г±Г«ГҐ ГЅГІГ®ГЈГ® ГЊГ„ ГЈГ®ГІГ®ГўГ  ГЄ ГЁГ­ГІГҐГЈГ°ГЁГ°Г®ГўГ Г­ГЁГѕ Г‘Г„Г“
 	rc = Init(nu, nullptr, EED); if (rc) return rc;
 	return 0 ;
 }
@@ -139,17 +144,17 @@ int ZMSC::Init(ZNU& nu_, ZLSF* lsf_, ZCExternalEquationsDefinition* EED)
 		SetExternalEquationsCount(ExtEqDef.Size()) ;
 	}
 
-	// Переводим НУ в СК интегрирования СДУ
+	// ГЏГҐГ°ГҐГўГ®Г¤ГЁГ¬ ГЌГ“ Гў Г‘ГЉ ГЁГ­ГІГҐГЈГ°ГЁГ°Г®ГўГ Г­ГЁГї Г‘Г„Г“
 	rc = ConvertSkNu(NU, _SK_ASK1975) ; 
-	if (rc) { AddErrorMSG( "Ошибка преобразования заданных НУ в АСК 1975 года") ; goto end ; }
-	// Загрузка информации о КА
+	if (rc) { AddErrorMSG( "ГЋГёГЁГЎГЄГ  ГЇГ°ГҐГ®ГЎГ°Г Г§Г®ГўГ Г­ГЁГї Г§Г Г¤Г Г­Г­Г»Гµ ГЌГ“ Гў ГЂГ‘ГЉ 1975 ГЈГ®Г¤Г ") ; goto end ; }
+	// Г‡Г ГЈГ°ГіГ§ГЄГ  ГЁГ­ГґГ®Г°Г¬Г Г¶ГЁГЁ Г® ГЉГЂ
 	if (KA.num!=NU.Key.ka) {
 		rc = LoadKA( NU.Key.ka, KA) ; if (rc) goto end ; ;
 		if (PreInitInfo.defautFixedStep > 0) {
 			KA.min_step = KA.max_step = PreInitInfo.defautFixedStep;
 		}
 	}
-	// Загрузка данных логической шкалы сил
+	// Г‡Г ГЈГ°ГіГ§ГЄГ  Г¤Г Г­Г­Г»Гµ Г«Г®ГЈГЁГ·ГҐГ±ГЄГ®Г© ГёГЄГ Г«Г» Г±ГЁГ«
 	if (lsf_) {
 		memcpy(&LSF, lsf_, sizeof(LSF)); 
 		NU.numlsf = LSF.num ; 
@@ -160,14 +165,14 @@ int ZMSC::Init(ZNU& nu_, ZLSF* lsf_, ZCExternalEquationsDefinition* EED)
 	}
 
 	//---------------------------------------------------------------------------
-	// Создание объектов атмосферы и загрузка параметров модели атмосферы 
-	// При необходимости создание диспетчера индексов СА
+	// Г‘Г®Г§Г¤Г Г­ГЁГҐ Г®ГЎГєГҐГЄГІГ®Гў Г ГІГ¬Г®Г±ГґГҐГ°Г» ГЁ Г§Г ГЈГ°ГіГ§ГЄГ  ГЇГ Г°Г Г¬ГҐГІГ°Г®Гў Г¬Г®Г¤ГҐГ«ГЁ Г ГІГ¬Г®Г±ГґГҐГ°Г» 
+	// ГЏГ°ГЁ Г­ГҐГ®ГЎГµГ®Г¤ГЁГ¬Г®Г±ГІГЁ Г±Г®Г§Г¤Г Г­ГЁГҐ Г¤ГЁГ±ГЇГҐГІГ·ГҐГ°Г  ГЁГ­Г¤ГҐГЄГ±Г®Гў Г‘ГЂ
 	if (LSF.vatm>=ATMDMAGOST1977 && LSF.vatm<=ATMMSIS2000) {
 		if (!m_ISAManager) m_ISAManager = new ZCISAManager ; 
 		if (!m_ISAManager) { rc = 1 ; goto end ; }
 	}
 
-	// При необъодимости создаётся объект рассчёта параметров статической атмосферы
+	// ГЏГ°ГЁ Г­ГҐГ®ГЎГєГ®Г¤ГЁГ¬Г®Г±ГІГЁ Г±Г®Г§Г¤Г ВёГІГ±Гї Г®ГЎГєГҐГЄГІ Г°Г Г±Г±Г·ВёГІГ  ГЇГ Г°Г Г¬ГҐГІГ°Г®Гў Г±ГІГ ГІГЁГ·ГҐГ±ГЄГ®Г© Г ГІГ¬Г®Г±ГґГҐГ°Г»
 	if (LSF.vatm==ATMSMA81 ) { 
 		if(!m_AtmSMA81 ) m_AtmSMA81 = new ZMAtmSMA81 ; 
 		if (!m_AtmSMA81) { rc = 1 ; goto end ; } 
@@ -181,13 +186,13 @@ int ZMSC::Init(ZNU& nu_, ZLSF* lsf_, ZCExternalEquationsDefinition* EED)
 		if (!m_AtmSMA440181) { rc = 1 ; goto end ; } 
 	}
 
-	// Загрузка модели гравитационного поля Земли
+	// Г‡Г ГЈГ°ГіГ§ГЄГ  Г¬Г®Г¤ГҐГ«ГЁ ГЈГ°Г ГўГЁГІГ Г¶ГЁГ®Г­Г­Г®ГЈГ® ГЇГ®Г«Гї Г‡ГҐГ¬Г«ГЁ
 	rc = LoadGravPole(&GPZ, LSF.vgpz, LSF.ngpz, LSF.mgpz) ; if (rc) goto end ;
 
 	IntegratorCreateStruct cs ;
-	// Интегрируем параметры t, X, Y, Z, Vx, Vy, Vz, m - всего 8 параметров
+	// Г€Г­ГІГҐГЈГ°ГЁГ°ГіГҐГ¬ ГЇГ Г°Г Г¬ГҐГІГ°Г» t, X, Y, Z, Vx, Vy, Vz, m - ГўГ±ГҐГЈГ® 8 ГЇГ Г°Г Г¬ГҐГІГ°Г®Гў
 	cs.n          = 8 ;
-	// Метод интегрирования РК 8-го порядка
+	// ГЊГҐГІГ®Г¤ ГЁГ­ГІГҐГЈГ°ГЁГ°Г®ГўГ Г­ГЁГї ГђГЉ 8-ГЈГ® ГЇГ®Г°ГїГ¤ГЄГ 
 	cs.RungeType  = ID_RUNGE_8 ;
 	cs.AdamsType  = 0 ; //ID_ADAMS_8 ;
 	cs.step_min   = KA.min_step / k_cbc ;
@@ -195,25 +200,25 @@ int ZMSC::Init(ZNU& nu_, ZLSF* lsf_, ZCExternalEquationsDefinition* EED)
 	cs.step       = cs.step_min ;
 	cs.fixed_step = PreInitInfo.defautFixedStep / k_cbc;
 	cs.step_eps   = 1e-13 ;
-	// С автоматическим выбором шага
+	// Г‘ Г ГўГІГ®Г¬Г ГІГЁГ·ГҐГ±ГЄГЁГ¬ ГўГ»ГЎГ®Г°Г®Г¬ ГёГ ГЈГ 
 	cs.flag       = F_RUNA_AUTOSTEP ;
 	cs.data       = 0 ;
 	cs.sph        = 0 ;
 	cs.user_break = 0 ;
 	cs.arg_index  = 0 ;
-	rc = Create(cs) ; if (!rc) { AddErrorMSG( "Ошибка создания интегратора" ) ; return rc ; }
+	rc = Create(cs) ; if (!rc) { AddErrorMSG( "ГЋГёГЁГЎГЄГ  Г±Г®Г§Г¤Г Г­ГЁГї ГЁГ­ГІГҐГЈГ°Г ГІГ®Г°Г " ) ; return rc ; }
 
 	Vitok75 = NU.vit ;
-	// Выкладываем вектор в интегратор
+	// Г‚Г»ГЄГ«Г Г¤Г»ГўГ ГҐГ¬ ГўГҐГЄГІГ®Г° Гў ГЁГ­ГІГҐГЈГ°Г ГІГ®Г°
 	rc = ZCIntegrator::SetVector(NU.t, NU.X, WeightFullNU()) ; if (rc) goto end ;
-	// Расчет всех кинематических параметров и оскулирующих элементов орбиты
-	// в начальной точке - в точке НУ
+	// ГђГ Г±Г·ГҐГІ ГўГ±ГҐГµ ГЄГЁГ­ГҐГ¬Г ГІГЁГ·ГҐГ±ГЄГЁГµ ГЇГ Г°Г Г¬ГҐГІГ°Г®Гў ГЁ Г®Г±ГЄГіГ«ГЁГ°ГіГѕГ№ГЁГµ ГЅГ«ГҐГ¬ГҐГ­ГІГ®Гў Г®Г°ГЎГЁГІГ»
+	// Гў Г­Г Г·Г Г«ГјГ­Г®Г© ГІГ®Г·ГЄГҐ - Гў ГІГ®Г·ГЄГҐ ГЌГ“
 	StepCalc(0) ;
-	// Инициация сообщения об изменении интегрируемого вектора 
+	// Г€Г­ГЁГ¶ГЁГ Г¶ГЁГї Г±Г®Г®ГЎГ№ГҐГ­ГЁГї Г®ГЎ ГЁГ§Г¬ГҐГ­ГҐГ­ГЁГЁ ГЁГ­ГІГҐГЈГ°ГЁГ°ГіГҐГ¬Г®ГЈГ® ГўГҐГЄГІГ®Г°Г  
 	rc = OnMessage(MMSG_SET_VECTOR, &(*this)[0], &((*this)[1])) ; if (rc) goto end ;
 
 end : ;
-	if (rc) { AddErrorMSG( "Ошибка инициализации модели движения КА" ) ; return rc ; }
+	if (rc) { AddErrorMSG( "ГЋГёГЁГЎГЄГ  ГЁГ­ГЁГ¶ГЁГ Г«ГЁГ§Г Г¶ГЁГЁ Г¬Г®Г¤ГҐГ«ГЁ Г¤ГўГЁГ¦ГҐГ­ГЁГї ГЉГЂ" ) ; return rc ; }
 	return 0 ;
 }
 
@@ -384,6 +389,25 @@ int ZMSC::OnMessage( long ModMsgID, double* t, double* X)
 	//if ( ModMsgID == MMSG_RESTORY    && SignalOnRestory ) { SignalOnRestory( this, MMSG_RESTORY, ( void* )&t, ( void* )X ) ; return 0 ; }
 	//if ( ModMsgID == MMSG_START      && SignalOnStart   ) { SignalOnStart  ( this, MMSG_START, ( void* )&t, ( void* )X ) ; return 0 ; } 
 	//if ( ModMsgID == MMSG_END        && SignalOnEnd     ) { SignalOnEnd    ( this, MMSG_END, ( void* )&t, ( void* )X ) ; return 0 ; }
+	// Normalize quaternion for rotational external equations to suppress drift.
+	if (m_RotQuatNormalize && X && GetExternalEquationsCount()>0) {
+		double* Xeq = X + 7;
+		int iQ0=-1, iQ1=-1, iQ2=-1, iQ3=-1;
+		for (int i=0; i<ExtEqDef.Size(); ++i) {
+			const int id = ExtEqDef.ID[i];
+			if (id==EXTEQ_ID_rot_q0) iQ0=i;
+			else if (id==EXTEQ_ID_rot_q1) iQ1=i;
+			else if (id==EXTEQ_ID_rot_q2) iQ2=i;
+			else if (id==EXTEQ_ID_rot_q3) iQ3=i;
+		}
+		if (iQ0>=0 && iQ1>=0 && iQ2>=0 && iQ3>=0) {
+			double q0=Xeq[iQ0], q1=Xeq[iQ1], q2=Xeq[iQ2], q3=Xeq[iQ3];
+			double nq = sqrt(q0*q0 + q1*q1 + q2*q2 + q3*q3);
+			if (nq>1e-20) {
+				Xeq[iQ0]=q0/nq; Xeq[iQ1]=q1/nq; Xeq[iQ2]=q2/nq; Xeq[iQ3]=q3/nq;
+			}
+		}
+	}
 	return 0 ;
 }
 
@@ -405,7 +429,7 @@ int ZMSC::OnFullZRV(ZZRV* ZRV, ZSC_SI* FSC)
 //-------------------------------------------------------------------------------
 void ZMSC::ASKtoASKbpl(double* X, double* Xbpl) 
 {
-	// Базовая плоскость 0 - экватор, 1 - XOZ, 2 - YOZ	
+	// ГЃГ Г§Г®ГўГ Гї ГЇГ«Г®Г±ГЄГ®Г±ГІГј 0 - ГЅГЄГўГ ГІГ®Г°, 1 - XOZ, 2 - YOZ	
 	if (KA.bpl==0) {
 		memcpy(Xbpl, X, 6*sizeof(double)) ;
 		return ;
@@ -427,9 +451,117 @@ void ZMSC::ASKtoASKbpl(double* X, double* Xbpl)
 //-------------------------------------------------------------------------------
 void ZMSC::ExternalEquationsOn (double* NU) 
 {
-	// "Включаем" внешние уравнения
+//-------------------------------------------------------------------------------
+void ZMSC::SetRotInertiaDiag(double Jx, double Jy, double Jz)
+{
+	m_RotJ[0] = Jx; m_RotJ[1] = Jy; m_RotJ[2] = Jz;
+	m_RotJinv[0] = (fabs(Jx)>1e-20 ? 1.0/Jx : 0.0);
+	m_RotJinv[1] = (fabs(Jy)>1e-20 ? 1.0/Jy : 0.0);
+	m_RotJinv[2] = (fabs(Jz)>1e-20 ? 1.0/Jz : 0.0);
+}
+
+//-------------------------------------------------------------------------------
+void ZMSC::SetRotConstantMoment(double Mx, double My, double Mz)
+{
+	m_RotMoment[0] = Mx; m_RotMoment[1] = My; m_RotMoment[2] = Mz;
+}
+
+//-------------------------------------------------------------------------------
+void ZMSC::SetRotQuatNormalization(bool On)
+{
+	m_RotQuatNormalize = On;
+}
+
+//-------------------------------------------------------------------------------
+void ZMSC::FillRotExternalDefinition(ZCExternalEquationsDefinition& EED) const
+{
+	EED << EXTEQ_ID_rot_q0;
+	EED << EXTEQ_ID_rot_q1;
+	EED << EXTEQ_ID_rot_q2;
+	EED << EXTEQ_ID_rot_q3;
+	EED << EXTEQ_ID_rot_wx;
+	EED << EXTEQ_ID_rot_wy;
+	EED << EXTEQ_ID_rot_wz;
+}
+
+//-------------------------------------------------------------------------------
+void ZMSC::FillRotInitialState(double* Xrot, const double* q, const double* w, bool Normalize) const
+{
+	if (!Xrot) return;
+	Xrot[0] = (q ? q[0] : 1.0);
+	Xrot[1] = (q ? q[1] : 0.0);
+	Xrot[2] = (q ? q[2] : 0.0);
+	Xrot[3] = (q ? q[3] : 0.0);
+	Xrot[4] = (w ? w[0] : 0.0);
+	Xrot[5] = (w ? w[1] : 0.0);
+	Xrot[6] = (w ? w[2] : 0.0);
+	if (Normalize) {
+		double nq = sqrt(Xrot[0]*Xrot[0] + Xrot[1]*Xrot[1] + Xrot[2]*Xrot[2] + Xrot[3]*Xrot[3]);
+		if (nq>1e-20) {
+			Xrot[0]/=nq; Xrot[1]/=nq; Xrot[2]/=nq; Xrot[3]/=nq;
+		}
+	}
+}
+
+	int iQ0=-1, iQ1=-1, iQ2=-1, iQ3=-1, iWx=-1, iWy=-1, iWz=-1;
+	for (i=0; i<N; ++i) {
+		switch(ExtEqDef.ID[i]) {
+			case EXTEQ_ID_rot_q0: iQ0=i; break;
+			case EXTEQ_ID_rot_q1: iQ1=i; break;
+			case EXTEQ_ID_rot_q2: iQ2=i; break;
+			case EXTEQ_ID_rot_q3: iQ3=i; break;
+			case EXTEQ_ID_rot_wx: iWx=i; break;
+			case EXTEQ_ID_rot_wy: iWy=i; break;
+			case EXTEQ_ID_rot_wz: iWz=i; break;
+		}
+	}
+
+	double rot_q0_dot=0.0, rot_q1_dot=0.0, rot_q2_dot=0.0, rot_q3_dot=0.0;
+	double rot_wx_dot=0.0, rot_wy_dot=0.0, rot_wz_dot=0.0;
+	bool hasRot = (iQ0>=0 && iQ1>=0 && iQ2>=0 && iQ3>=0 && iWx>=0 && iWy>=0 && iWz>=0);
+	if (hasRot && Xexe) {
+		double q0 = Xexe[iQ0], q1 = Xexe[iQ1], q2 = Xexe[iQ2], q3 = Xexe[iQ3];
+		double wx = Xexe[iWx], wy = Xexe[iWy], wz = Xexe[iWz];
+		rot_q0_dot =-0.5*(q1*wx + q2*wy + q3*wz);
+		rot_q1_dot = 0.5*(q0*wx + q2*wz - q3*wy);
+		rot_q2_dot = 0.5*(q0*wy + q3*wx - q1*wz);
+		rot_q3_dot = 0.5*(q0*wz + q1*wy - q2*wx);
+
+		double Jw_x = m_RotJ[0]*wx;
+		double Jw_y = m_RotJ[1]*wy;
+		double Jw_z = m_RotJ[2]*wz;
+		double c_x = wy*Jw_z - wz*Jw_y;
+		double c_y = wz*Jw_x - wx*Jw_z;
+		double c_z = wx*Jw_y - wy*Jw_x;
+		rot_wx_dot = m_RotJinv[0]*(m_RotMoment[0] - c_x);
+		rot_wy_dot = m_RotJinv[1]*(m_RotMoment[1] - c_y);
+		rot_wz_dot = m_RotJinv[2]*(m_RotMoment[2] - c_z);
+	}
+
+		case EXTEQ_ID_rot_q0:
+			Yexe[i] = rot_q0_dot;
+			break;
+		case EXTEQ_ID_rot_q1:
+			Yexe[i] = rot_q1_dot;
+			break;
+		case EXTEQ_ID_rot_q2:
+			Yexe[i] = rot_q2_dot;
+			break;
+		case EXTEQ_ID_rot_q3:
+			Yexe[i] = rot_q3_dot;
+			break;
+		case EXTEQ_ID_rot_wx:
+			Yexe[i] = rot_wx_dot;
+			break;
+		case EXTEQ_ID_rot_wy:
+			Yexe[i] = rot_wy_dot;
+			break;
+		case EXTEQ_ID_rot_wz:
+			Yexe[i] = rot_wz_dot;
+			break;
+	// "Г‚ГЄГ«ГѕГ·Г ГҐГ¬" ГўГ­ГҐГёГ­ГЁГҐ ГіГ°Г ГўГ­ГҐГ­ГЁГї
 	ZCIntegrator::ExternalEquationsOn(NU) ;
-	// Копируем НУ для внешних уравнений в конец интегрируемого вектора
+	// ГЉГ®ГЇГЁГ°ГіГҐГ¬ ГЌГ“ Г¤Г«Гї ГўГ­ГҐГёГ­ГЁГµ ГіГ°Г ГўГ­ГҐГ­ГЁГ© Гў ГЄГ®Г­ГҐГ¶ ГЁГ­ГІГҐГЈГ°ГЁГ°ГіГҐГ¬Г®ГЈГ® ГўГҐГЄГІГ®Г°Г 
 	ZSC_SI* SI = &FSC ;
 	SI->ExternalEqCount = GetExternalEquationsCount() ;
 	SI->ExternalEqOn = true ;
@@ -440,9 +572,9 @@ void ZMSC::ExternalEquationsOn (double* NU)
 //-------------------------------------------------------------------------------
 void ZMSC::ExternalEquationsOff(double* X) 
 {
-	// "Включаем" внешние уравнения
+	// "Г‚ГЄГ«ГѕГ·Г ГҐГ¬" ГўГ­ГҐГёГ­ГЁГҐ ГіГ°Г ГўГ­ГҐГ­ГЁГї
 	ZCExternalEquations::ExternalEquationsOff(X) ;
-	// Копируем НУ для внешних уравнений в конец интегрируемого вектора
+	// ГЉГ®ГЇГЁГ°ГіГҐГ¬ ГЌГ“ Г¤Г«Гї ГўГ­ГҐГёГ­ГЁГµ ГіГ°Г ГўГ­ГҐГ­ГЁГ© Гў ГЄГ®Г­ГҐГ¶ ГЁГ­ГІГҐГЈГ°ГЁГ°ГіГҐГ¬Г®ГЈГ® ГўГҐГЄГІГ®Г°Г 
 	ZSC_SI* SI = &(FSR.E.ID==ModEvent_EMPTY ? FSC:FSR) ;
 	SI->ExternalEqOn = false ;
 	if (X)	memcpy(X, &SI->ExternalEq, GetExternalEquationsCount()*sizeof(double)) ;
